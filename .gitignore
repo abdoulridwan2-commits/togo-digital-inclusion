@@ -1,0 +1,34 @@
+# Environnement virtuel
+
+.venv/
+venv/
+env/
+
+# Python
+
+**pycache**/
+_.py[cod]
+_$py.class
+\*.so
+.Python
+
+# Streamlit
+
+.streamlit/
+
+# Données temporaires / Excel
+
+_.xlsx
+~$_
+
+# OS
+
+.DS_Store
+Thumbs.db
+
+# IDE
+
+.vscode/
+.idea/
+_.swp
+_.swo
