@@ -22,7 +22,7 @@ FILES = {
     "population": "population_clean.csv",
 }
 
-# Navigation
+# Navigation principale du dashboard
 PAGES = [
     "🏠 ACCUEIL",
     "📊 VUE NATIONALE",
@@ -31,6 +31,7 @@ PAGES = [
     "🏦 FINANCE",
     "👥 POPULATION",
     "🗺️ TERRITOIRES",
+    "🧮 SIMULATEUR",
     "🎯 ACTIONS",
     "📚 MÉTHODE",
 ]

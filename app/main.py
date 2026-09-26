@@ -3,6 +3,14 @@ Point d'entrée principal du dashboard
 Togo Digital & Financial Inclusion
 """
 
+import sys
+from pathlib import Path
+
+# Fix du chemin Python (obligatoire pour Streamlit)
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import streamlit as st
 
 from app.components.header import render_header
@@ -16,6 +24,7 @@ from app.pages import (
     finance,
     population,
     territoires,
+    simulateur,
     actions,
     methode,
 )
@@ -48,6 +57,8 @@ def main():
         population.render()
     elif selected == "🗺️ TERRITOIRES":
         territoires.render()
+    elif selected == "🧮 SIMULATEUR":
+        simulateur.render()
     elif selected == "🎯 ACTIONS":
         actions.render()
     elif selected == "📚 MÉTHODE":

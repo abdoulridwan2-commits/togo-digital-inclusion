@@ -1,5 +1,6 @@
 """
-Chargement centralisé des données
+Chargement centralisé et enrichi des données
+Togo Digital & Financial Inclusion
 """
 
 from pathlib import Path
@@ -7,6 +8,12 @@ import pandas as pd
 import streamlit as st
 
 from app.config.settings import DATA_PROCESSED, FILES
+from app.analytics.engine import (
+    get_clean_geodata,
+    get_indicators_table,
+    get_prefecture_indicators,
+    get_population_hierarchy,
+)
 
 
 def _read_csv(filename: str) -> pd.DataFrame | None:
@@ -17,7 +24,19 @@ def _read_csv(filename: str) -> pd.DataFrame | None:
 
 
 @st.cache_data
-def load_indicateurs() -> pd.DataFrame | None:
+def load_indicateurs(mode="5_regions") -> pd.DataFrame | None:
+    """Charge les indicateurs consolidés (5_regions ou 6_territoires avec Grand Lomé)."""
+    try:
+        df = get_indicators_table(mode=mode)
+        if df is not None and not df.empty:
+            # Compatibilité : s'assurer que la colonne 'region' existe
+            if "region" not in df.columns and "territoire" in df.columns:
+                df["region"] = df["territoire"]
+            return df
+    except Exception as e:
+        pass
+    
+    # Fallback vers fichier CSV existant
     df = _read_csv(FILES["indicateurs"])
     if df is None:
         return None
@@ -26,6 +45,12 @@ def load_indicateurs() -> pd.DataFrame | None:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
+
+
+@st.cache_data
+def load_indicateurs_prefectures() -> pd.DataFrame:
+    """Charge les indicateurs détaillés au niveau préfectoral."""
+    return get_prefecture_indicators()
 
 
 @st.cache_data
@@ -69,11 +94,17 @@ def load_telecoms() -> pd.DataFrame | None:
 
 @st.cache_data
 def load_etablissements() -> pd.DataFrame | None:
+    _, etabs = get_clean_geodata()
+    if not etabs.empty:
+        return etabs
     return _read_csv(FILES["etablissements"])
 
 
 @st.cache_data
 def load_agents() -> pd.DataFrame | None:
+    agents, _ = get_clean_geodata()
+    if not agents.empty:
+        return agents
     return _read_csv(FILES["agents"])
 
 

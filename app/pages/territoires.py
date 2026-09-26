@@ -1,5 +1,5 @@
 """
-Page TERRITOIRES — Explorateur territorial
+Page TERRITOIRES — Drill-Down Préfectoral & Analyse des Déserts Financiers
 """
 
 import streamlit as st
@@ -7,201 +7,183 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 
-from app.data.loader import load_indicateurs
-from app.components.kpi import format_number, format_decimal
+from app.data.loader import load_indicateurs, load_indicateurs_prefectures
+from app.components.kpi import format_number, format_decimal, render_custom_card
 from app.config.theme import COLORS
 
 
-def territory_profile(row):
-    """Affiche le profil d'un territoire."""
-    st.markdown(f"""
-    <div style="background:white; border:1px solid #E2E8F0; border-radius:18px; padding:1.4rem; box-shadow:0 5px 16px rgba(0,0,0,0.04);">
-        <div style="font-size:1.4rem; font-weight:800; color:#0B3D5C;">{row['region']}</div>
-        <div style="color:#64748B; font-size:0.9rem;">Profil territorial d'accès</div>
-        <hr>
-        <b>Population :</b> {format_number(row.get('population'))}<br><br>
-        <b>Agents Mobile Money :</b> {format_number(row.get('nb_agents_mm'))}<br><br>
-        <b>Points financiers :</b> {format_number(row.get('nb_points_financiers'))}<br><br>
-        <b>Habitants / agent :</b> {format_number(row.get('habitants_par_agent_mm'))}<br><br>
-        <b>Habitants / point financier :</b> {format_number(row.get('habitants_par_point_financier'))}<br><br>
-        <b>Agents MM / point financier :</b> {format_decimal(row.get('ratio_agents_par_point'))}
-    </div>
-    """, unsafe_allow_html=True)
-
-
 def render():
-    st.markdown("## 🗺️ Territoires")
-    st.caption("Explorer et comparer les profils d'accès des territoires.")
+    st.markdown("## 🗺️ Diagnostics Territoriaux & Déserts Financiers")
+    st.caption("Exploration multi-niveaux (Régions & Préfectures), détection des zones d'exclusion et comparaison radar.")
 
-    indicators = load_indicateurs()
-    if indicators is None or indicators.empty:
-        st.warning("Indicateurs territoriaux non disponibles.")
-        return
+    tab_regions, tab_prefectures, tab_deserts = st.tabs([
+        "🏛️ Analyse Régionale",
+        "📍 Drill-Down Préfectoral (39 Préfectures)",
+        "⚠️ Observatoire des Déserts Bancaires"
+    ])
 
-    regions = sorted(indicators["region"].dropna().unique().tolist())
+    # ========================================================
+    # TAB 1 : ANALYSE RÉGIONALE
+    # ========================================================
+    with tab_regions:
+        mode = st.radio(
+            "Vue territoriale",
+            ["6 Pôles (Grand Lomé & Maritime séparés)", "5 Régions officielles"],
+            horizontal=True,
+            key="terr_reg_mode"
+        )
+        mode_key = "6_territoires" if "6 Pôles" in mode else "5_regions"
+        indicators = load_indicateurs(mode=mode_key)
 
-    # --------------------------------------------------------
-    # FILTRE RÉGION
-    # --------------------------------------------------------
-    selected = st.selectbox("Sélectionner une région", ["Toutes les régions"] + regions)
-    current = indicators if selected == "Toutes les régions" else indicators[indicators["region"] == selected].copy()
+        if indicators is not None and not indicators.empty:
+            territory_col = "territoire" if "territoire" in indicators.columns else "region"
+            territories = sorted(indicators[territory_col].dropna().unique().tolist())
 
-    # KPI
-    population = current["population"].sum()
-    agents = current["nb_agents_mm"].sum()
-    points = current["nb_points_financiers"].sum()
-    ratio = agents / points if points > 0 else None
+            selected = st.selectbox("Sélectionner un territoire", ["Tous les territoires"] + territories, key="terr_sel")
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Population", format_number(population))
-    c2.metric("Agents MM", format_number(agents))
-    c3.metric("Points financiers", format_number(points))
-    c4.metric("Agents / point", format_decimal(ratio))
+            if selected != "Tous les territoires":
+                curr = indicators[indicators[territory_col] == selected].iloc[0]
+                k1, k2, k3, k4 = st.columns(4)
+                with k1:
+                    render_custom_card("Population (2022)", format_number(curr["population"]), "Habitants résidents", badge="INSEED", color=COLORS["navy"])
+                with k2:
+                    render_custom_card("Agents Mobile Money", format_number(curr["nb_agents_mm"]), "Points de proximité", badge="MM", color=COLORS["green"])
+                with k3:
+                    render_custom_card("Points Financiers", format_number(curr["nb_points_financiers"]), "Banques & Microfinances", badge="Fixe", color=COLORS["blue"])
+                with k4:
+                    render_custom_card("Score Inclusion", f"{curr.get('score_inclusion', 0):.1f} / 100", "Indice IDNF", badge="Score", color=COLORS["gold"])
 
-    st.markdown("---")
+            st.markdown("---")
 
-    # --------------------------------------------------------
-    # PROFIL D'UN TERRITOIRE
-    # --------------------------------------------------------
-    if selected != "Toutes les régions":
-        st.markdown("### Profil du territoire")
+            # Comparateur Radar
+            st.markdown("### 🕸️ Comparateur Radar de deux territoires")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                t_a = st.selectbox("Territoire A", territories, index=0, key="radar_a")
+            with col_b:
+                t_b = st.selectbox("Territoire B", territories, index=min(1, len(territories) - 1), key="radar_b")
 
-        row = current.iloc[0]
-        p1, p2 = st.columns([1, 2])
+            row_a = indicators[indicators[territory_col] == t_a].iloc[0]
+            row_b = indicators[indicators[territory_col] == t_b].iloc[0]
 
-        with p1:
-            territory_profile(row)
-
-        with p2:
-            # Radar relatif (normalisation simple, pas de score)
-            categories = ["Agents MM", "Points financiers", "Population"]
-            values = [row["nb_agents_mm"], row["nb_points_financiers"], row["population"]]
-            max_vals = [
-                indicators["nb_agents_mm"].max(),
-                indicators["nb_points_financiers"].max(),
-                indicators["population"].max()
+            categories = ["Densité MM (/10k hab)", "Points Physiques (/100k hab)", "Score Inclusion (/100)", "Part Banques (%)"]
+            
+            val_a = [
+                min(100, (row_a["nb_agents_mm"] / row_a["population"]) * 10000 * 2.5),
+                min(100, (row_a["nb_points_financiers"] / row_a["population"]) * 100000 * 3),
+                row_a.get("score_inclusion", 50),
+                (row_a.get("nb_banques", 0) / max(1, row_a["nb_points_financiers"])) * 100
             ]
-            normalized = [(v / m * 100) if m else 0 for v, m in zip(values, max_vals)]
+            val_b = [
+                min(100, (row_b["nb_agents_mm"] / row_b["population"]) * 10000 * 2.5),
+                min(100, (row_b["nb_points_financiers"] / row_b["population"]) * 100000 * 3),
+                row_b.get("score_inclusion", 50),
+                (row_b.get("nb_banques", 0) / max(1, row_b["nb_points_financiers"])) * 100
+            ]
 
-            radar = go.Figure()
-            radar.add_trace(go.Scatterpolar(
-                r=normalized + [normalized[0]],
-                theta=categories + [categories[0]],
-                fill="toself",
-                name=selected,
-                line_color=COLORS["navy"]
-            ))
-            radar.update_layout(
+            fig_radar = go.Figure()
+            fig_radar.add_trace(go.Scatterpolar(r=val_a, theta=categories, fill='toself', name=t_a, line_color=COLORS["navy"]))
+            fig_radar.add_trace(go.Scatterpolar(r=val_b, theta=categories, fill='toself', name=t_b, line_color=COLORS["gold"]))
+            fig_radar.update_layout(
                 polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                height=400,
-                title="Profil relatif du territoire"
+                showlegend=True,
+                height=420,
+                title=f"Profil comparé : {t_a} vs {t_b}"
             )
-            st.plotly_chart(radar, use_container_width=True)
+            st.plotly_chart(fig_radar, use_container_width=True)
 
-        st.markdown(f"""
-        **Commentaire**  
-        Le profil de **{selected}** est présenté à partir des indicateurs de présence 
-        et de densité relative disponibles.
+    # ========================================================
+    # TAB 2 : DRILL-DOWN PRÉFECTORAL
+    # ========================================================
+    with tab_prefectures:
+        st.markdown("### 📍 Diagnostic au niveau des Préfectures")
+        st.caption("Consultez la situation précise de chacune des préfectures togolaises.")
+        
+        pref_df = load_indicateurs_prefectures()
+        if pref_df is not None and not pref_df.empty:
+            # Filtre par région
+            all_regs = ["Toutes"] + sorted(pref_df["region"].dropna().unique().tolist())
+            sel_reg = st.selectbox("Filtrer les préfectures par région parente", all_regs, key="pref_filter_reg")
+            
+            p_display = pref_df.copy()
+            if sel_reg != "Toutes":
+                p_display = p_display[p_display["region"] == sel_reg]
 
-        **Conclusion**  
-        Ces mesures décrivent la structure d'accès du territoire. 
-        Elles ne mesurent pas l'activité réelle des points ou des agents.
+            # Tri
+            sort_by = st.selectbox("Trier par", ["Population", "Nombre d'agents MM", "Points financiers", "Habitants / point financier"], key="pref_sort")
+            col_map = {
+                "Population": "population",
+                "Nombre d'agents MM": "nb_agents_mm",
+                "Points financiers": "nb_points_financiers",
+                "Habitants / point financier": "habitants_par_point_financier"
+            }
+            p_display = p_display.sort_values(by=col_map[sort_by], ascending=False)
 
-        **Piste d'action**  
-        Compléter par une analyse locale (préfectures / communes) 
-        lorsque des données plus fines sont disponibles.
-        """)
+            st.dataframe(
+                p_display.rename(columns={
+                    "prefecture": "Préfecture",
+                    "region": "Région",
+                    "population": "Population (2022)",
+                    "nb_agents_mm": "Agents MM",
+                    "nb_points_financiers": "Points Financiers",
+                    "nb_banques": "Banques",
+                    "nb_microfinances": "Microfinances",
+                    "habitants_par_agent_mm": "Hab / Agent MM",
+                    "habitants_par_point_financier": "Hab / Point",
+                    "ratio_agents_par_point": "Agents / Point",
+                    "statut_desert": "Statut de Couverture"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
 
-        st.markdown("---")
-
-    # --------------------------------------------------------
-    # COMPARAISON DE DEUX TERRITOIRES
-    # --------------------------------------------------------
-    st.markdown("### Comparer deux territoires")
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        region_a = st.selectbox("Territoire A", regions, key="terr_a")
-    with col_b:
-        region_b = st.selectbox("Territoire B", regions, index=min(1, len(regions)-1), key="terr_b")
-
-    row_a = indicators[indicators["region"] == region_a]
-    row_b = indicators[indicators["region"] == region_b]
-
-    if not row_a.empty and not row_b.empty:
-        a, b = row_a.iloc[0], row_b.iloc[0]
-
-        comparison = pd.DataFrame({
-            "Indicateur": [
-                "Population",
-                "Agents Mobile Money",
-                "Points financiers",
-                "Habitants / agent MM",
-                "Habitants / point financier",
-                "Agents MM / point financier",
-            ],
-            region_a: [
-                a["population"], a["nb_agents_mm"], a["nb_points_financiers"],
-                a["habitants_par_agent_mm"], a["habitants_par_point_financier"],
-                a["ratio_agents_par_point"],
-            ],
-            region_b: [
-                b["population"], b["nb_agents_mm"], b["nb_points_financiers"],
-                b["habitants_par_agent_mm"], b["habitants_par_point_financier"],
-                b["ratio_agents_par_point"],
-            ],
-        })
-
-        st.dataframe(comparison, use_container_width=True, hide_index=True)
-
+    # ========================================================
+    # TAB 3 : DÉSERTS BANCAIRES
+    # ========================================================
+    with tab_deserts:
+        st.markdown("### ⚠️ Observatoire des Déserts Bancaires & Zones Vulnérables")
         st.markdown("""
-        **Commentaire**  
-        La comparaison présente les valeurs côte à côte.  
-        Aucun classement « gagnant / perdant » n'est produit automatiquement.
-
-        **Conclusion**  
-        Les écarts observés portent sur la présence et la densité relative des réseaux.
-
-        **Piste d'action**  
-        Approfondir l'analyse sur les territoires présentant 
-        une forte population et une densité relative faible de points financiers.
+        Un **désert bancaire** est défini comme une préfecture où il n'existe **aucune agence bancaire commerciale physique**. 
+        Dans ces territoires, l'accès au compte bancaire conventionnel, aux crédits structurés et aux devises est inexistant 
+        sans un déplacement long et coûteux vers la capitale régionale ou Lomé.
         """)
 
-    st.markdown("---")
+        pref_df = load_indicateurs_prefectures()
+        if pref_df is not None and not pref_df.empty:
+            deserts = pref_df[pref_df["nb_banques"] == 0].copy()
+            
+            c_d1, c_d2 = st.columns([2, 3])
+            with c_d1:
+                st.metric("Préfectures sans aucune banque", f"{len(deserts)} sur {len(pref_df)}")
+                pop_desert = deserts["population"].sum()
+                st.metric("Population en zone de désert bancaire", f"{pop_desert:,} hab.".replace(",", " "))
+                st.warning("⚡ **Facteur de résilience :** Ces populations dépendent à 100% du réseau Mobile Money et de quelques caisses de microfinance pour leurs transactions quotidiennes.")
 
-    # --------------------------------------------------------
-    # VUE COMPARATIVE NATIONALE
-    # --------------------------------------------------------
-    st.markdown("### Vue comparative nationale")
+            with c_d2:
+                fig_desert = px.bar(
+                    deserts.sort_values("population", ascending=False).head(10),
+                    x="population",
+                    y="prefecture",
+                    orientation="h",
+                    title="Top 10 des préfectures les plus peuplées sans banque",
+                    labels={"population": "Population résidente", "prefecture": "Préfecture"},
+                    color="region",
+                    color_discrete_sequence=px.colors.qualitative.Safe
+                )
+                fig_desert.update_layout(height=380, plot_bgcolor="white")
+                st.plotly_chart(fig_desert, use_container_width=True)
 
-    metric = st.selectbox(
-        "Indicateur à comparer",
-        [
-            "habitants_par_point_financier",
-            "habitants_par_agent_mm",
-            "ratio_agents_par_point",
-            "nb_agents_mm",
-            "nb_points_financiers",
-        ],
-        format_func=lambda x: {
-            "habitants_par_point_financier": "Habitants par point financier",
-            "habitants_par_agent_mm": "Habitants par agent Mobile Money",
-            "ratio_agents_par_point": "Agents Mobile Money / point financier",
-            "nb_agents_mm": "Nombre d'agents Mobile Money",
-            "nb_points_financiers": "Nombre de points financiers",
-        }.get(x, x)
-    )
-
-    fig = px.bar(
-        indicators.sort_values(metric, ascending=False),
-        x="region",
-        y=metric,
-        title=f"Comparaison — {metric}",
-        labels={"region": "Région", metric: metric},
-        color_discrete_sequence=[COLORS["navy"]]
-    )
-    fig.update_layout(height=420, plot_bgcolor="white")
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("### Données territoriales")
-    st.dataframe(current, use_container_width=True, hide_index=True)
+            st.markdown("#### Liste exhaustive des préfectures en situation de désert bancaire")
+            st.dataframe(
+                deserts[["prefecture", "region", "population", "nb_agents_mm", "nb_points_financiers", "nb_microfinances", "statut_desert"]].rename(columns={
+                    "prefecture": "Préfecture",
+                    "region": "Région",
+                    "population": "Population",
+                    "nb_agents_mm": "Agents MM (Relais Vital)",
+                    "nb_points_financiers": "Points Totaux",
+                    "nb_microfinances": "Microfinances",
+                    "statut_desert": "Diagnostic"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )

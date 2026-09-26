@@ -1,86 +1,138 @@
 """
-Page ACTIONS
+Page ACTIONS — Feuille de Route Stratégique & Matrice de Priorisation
+Togo Digital & Financial Inclusion
 """
 
 import streamlit as st
+import pandas as pd
+import plotly.express as px
 
-from app.data.loader import load_indicateurs, load_internet_penetration
+from app.data.loader import load_indicateurs, load_internet_penetration, load_indicateurs_prefectures
 from app.components.kpi import format_number, format_decimal
+from app.config.theme import COLORS
 
 
 def render():
-    st.markdown("## 🎯 Actions")
-    st.caption("Observations → Enjeux → Pistes d'action fondées sur les données disponibles.")
+    st.markdown("## 🎯 Matrice d'Actions & Recommandations 2026-2030")
+    st.caption("Traduire les données probantes en plans d'intervention ciblés et mesurables.")
 
-    indicators = load_indicateurs()
+    indicators = load_indicateurs(mode="6_territoires")
     internet = load_internet_penetration()
+    prefectures = load_indicateurs_prefectures()
 
     if indicators is None or indicators.empty:
-        st.warning("Les indicateurs territoriaux sont nécessaires pour cette section.")
+        st.warning("Indicateurs territoriaux requis pour afficher cette section.")
         return
 
-    st.markdown("### 01 · Accélérer l'usage d'Internet")
+    # --------------------------------------------------------
+    # 1. Matrice de Priorisation Territoriale
+    # --------------------------------------------------------
+    st.markdown("### 1. Matrice de Priorité d'Intervention")
+    
+    st.markdown("""
+    En croisant le **volume de population résidente**, la **pression par point financier** et l'**indice d'inclusion IDNF**, 
+    nous classons les territoires togolais selon leur niveau d'urgence :
+    """)
 
-    if internet is not None and not internet.empty:
-        latest = internet.iloc[-1]["value"]
+    priority_rows = []
+    territory_col = "territoire" if "territoire" in indicators.columns else "region"
+    
+    for _, row in indicators.iterrows():
+        t = row[territory_col]
+        score = row.get("score_inclusion", 50)
+        hab_pt = row["habitants_par_point_financier"]
+        
+        if score < 45 or hab_pt > 15000:
+            niveau = "🔴 Priorité 1 : Urgence Haute"
+            action_cle = "Déploiement d'urgence de points physiques fixes et kiosques bancaires"
+        elif score < 65 or hab_pt > 10000:
+            niveau = "🟡 Priorité 2 : Vigilance / Consolidation"
+            action_cle = "Densification des agents MM et encouragement de la microfinance"
+        else:
+            niveau = "🟢 Priorité 3 : Territoire Avancé"
+            action_cle = "Diversification vers les services financiers numériques complexes (crédit, épargne)"
+            
+        priority_rows.append({
+            "Territoire": t,
+            "Population": format_number(row["population"]),
+            "Charge / Point": f"{format_number(hab_pt)} hab.",
+            "Score IDNF": f"{score:.1f} / 100",
+            "Niveau d'Urgence": niveau,
+            "Axe d'Intervention Prioritaire": action_cle
+        })
+
+    st.dataframe(pd.DataFrame(priority_rows), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # --------------------------------------------------------
+    # 2. Les 4 Axes Stratégiques Fondés sur les Données
+    # --------------------------------------------------------
+    st.markdown("### 2. Piliers d'intervention opérationnelle")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        latest_net = internet.iloc[-1]["value"] if (internet is not None and not internet.empty) else 37.6
         st.markdown(f"""
         <div class="recommendation">
-            <b>Observation</b><br>
-            La dernière valeur disponible de l'utilisation d'Internet est de
-            <strong>{latest:.1f}%</strong> (moins de 4 personnes sur 10).<br><br>
-            <b>Enjeu</b><br>
-            L'accès mobile et l'usage effectif d'Internet ne sont pas équivalents.<br><br>
-            <b>Piste d'action</b><br>
-            • Réduction du coût de la data<br>
-            • Points d'accès communautaires (Wi-Fi)<br>
-            • Formation aux usages numériques de base<br><br>
-            <b>Indicateur de suivi</b><br>
-            Évolution de la part de la population utilisant Internet.
+            <h4 style="color:#065F46; margin-top:0;">AXE 1 · Démocratiser l'Accès Internet & la Data</h4>
+            <b>Donnée probante :</b> Taux d'usage Internet à <strong>{latest_net:.1f}%</strong> (62% de non-utilisateurs).<br><br>
+            <b>Objectifs opérationnels :</b><br>
+            • Inciter à la baisse des tarifs de connectivité data mobile par l'ARCEP.<br>
+            • Déployer des points Wi-Fi communautaires gratuits autour des mairies et marchés ruraux.<br>
+            • Généraliser les terminaux 4G low-cost par des partenariats public-privé.
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 02 · Renforcer les réseaux dans les territoires sous pression")
+        st.markdown("""
+        <div class="recommendation">
+            <h4 style="color:#065F46; margin-top:0;">AXE 3 · Résorption des Déserts Bancaires</h4>
+            <b>Donnée probante :</b> Plus de 15 préfectures togolaises sans aucune banque commerciale.<br><br>
+            <b>Objectifs opérationnels :</b><br>
+            • Incitations fiscales pour l'installation d'agences bancaires et de GAB dans les chefs-lieux délaissés.<br>
+            • Soutien au réseau des Systèmes Financiers Décentralisés (SFD / Microfinances) pour combler le vide bancaire.<br>
+            • Création d'agences bancaires mobiles itinérantes sur les grands marchés forains.
+        </div>
+        """, unsafe_allow_html=True)
 
-    pressure = indicators.loc[indicators["habitants_par_point_financier"].idxmax()]
-    st.markdown(f"""
-    <div class="recommendation">
-        <b>Observation</b><br>
-        La région présentant la plus forte valeur d'habitants par point financier est
-        <strong>{pressure['region']}</strong>
-        ({format_number(pressure['habitants_par_point_financier'])} habitants par point).<br><br>
-        <b>Enjeu</b><br>
-        Accessibilité relative des services financiers physiques.<br><br>
-        <b>Piste d'action</b><br>
-        Examiner les préfectures et communes concernées afin d'identifier
-        les territoires où l'ouverture ou le renforcement de points de service
-        pourrait améliorer la couverture.<br><br>
-        <b>Indicateur de suivi</b><br>
-        Habitants par point financier.
-    </div>
-    """, unsafe_allow_html=True)
+    with c2:
+        dominant = indicators.loc[indicators["ratio_agents_par_point"].idxmax()]
+        t_dom = dominant.get("territoire", dominant.get("region"))
+        st.markdown(f"""
+        <div class="recommendation">
+            <h4 style="color:#065F46; margin-top:0;">AXE 2 · Professionnalisation & Liquidité du Mobile Money</h4>
+            <b>Donnée probante :</b> Ratio de <strong>{format_decimal(dominant['ratio_agents_par_point'])} agents MM</strong> par point fixe dans les <strong>{t_dom}</strong>.<br><br>
+            <b>Objectifs opérationnels :</b><br>
+            • Résoudre le goulot d'étranglement de la liquidité (cash-in / cash-out) dans les zones enclavées.<br>
+            • Accélérer l'interopérabilité totale et sans frais entre T-Money et Moov Flooz.<br>
+            • Sécuriser le statut et les marges des agents ruraux pour éviter la cessation d'activité.
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("### 03 · Optimiser le rôle du Mobile Money comme relais")
+        st.markdown("""
+        <div class="recommendation">
+            <h4 style="color:#065F46; margin-top:0;">AXE 4 · Éducation Financière & Confiance Numérique</h4>
+            <b>Donnée probante :</b> Forte utilisation du cash persistant malgré 19 790 agents MM.<br><br>
+            <b>Objectifs opérationnels :</b><br>
+            • Campagnes d'alphabétisation financière en langues nationales (Éwé, Kabyè, Kotokoli, Moba).<br>
+            • Renforcement de la lutte contre les arnaques et fraudes téléphoniques ciblant les usagers vulnérables.<br>
+            • Numérisation des aides sociales et des paiements agricoles bord-champ.
+        </div>
+        """, unsafe_allow_html=True)
 
-    mm_dominant = indicators.loc[indicators["ratio_agents_par_point"].idxmax()]
-    st.markdown(f"""
-    <div class="recommendation">
-        <b>Observation</b><br>
-        La région où le ratio Agents Mobile Money / points financiers est le plus élevé est
-        <strong>{mm_dominant['region']}</strong>
-        (ratio {format_decimal(mm_dominant['ratio_agents_par_point'])}).<br><br>
-        <b>Enjeu</b><br>
-        Le Mobile Money apparaît comme un relais potentiel d'accès dans ce territoire.<br><br>
-        <b>Piste d'action</b><br>
-        • Professionnaliser et densifier le réseau d'agents dans les zones éloignées<br>
-        • Développer des produits d'épargne et de crédit via Mobile Money<br>
-        • Vérifier l'activité réelle des agents<br><br>
-        <b>Indicateur de suivi</b><br>
-        Nombre d'agents actifs + volume de transactions Mobile Money.
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("---")
 
-    st.warning(
-        "Ces recommandations sont des pistes fondées sur les données disponibles. "
-        "La présence d'un point ou d'un agent ne mesure pas automatiquement son activité. "
-        "Aucune causalité n'est affirmée."
+    # --------------------------------------------------------
+    # 3. Export des Recommandations
+    # --------------------------------------------------------
+    st.markdown("### 📥 Télécharger le Plan d'Action")
+    df_export = pd.DataFrame(priority_rows)
+    csv_data = df_export.to_csv(index=False).encode('utf-8')
+    
+    st.download_button(
+        label="📄 Télécharger la Matrice de Priorités (CSV)",
+        data=csv_data,
+        file_name="togo_matrice_priorites_inclusion_2026.csv",
+        mime="text/csv"
     )
